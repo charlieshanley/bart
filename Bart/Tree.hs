@@ -1,20 +1,17 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase    #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Bart.Tree where
 
 import qualified System.Random.MWC.Probability as P
 import           System.Random.MWC.Probability (Prob)
-import           Control.Monad.Primitive (PrimMonad)
-import qualified Data.Vector.Unboxed as U
-import qualified Data.Vector         as V
+import qualified Data.Array.Repa as R
+import           Data.Array.Repa (Array, U, D,
+                                  (:.)(..), Z(..), DIM1, DIM2, Any(..))
+-- import           Control.Monad.Primitive (PrimMonad)
+-- TODO bring back PrimMonad m => Prob m _ instead of Prob IO _
 
--- TODO make general / polymorphic maybe
--- IE `Ix a => covariate :: a` or `covariate :: a -> Double`
-
--- TODO try with Data.Array in another branch
-
-type X = V.Vector (U.Vector Double)
--- each U.Vector must be the same length (not expressed at type level)
+type X = Array U DIM2 Double
 
 data Tree = Leaf   { obs       :: X }
           | Branch { covariate :: Int
@@ -24,26 +21,34 @@ data Tree = Leaf   { obs       :: X }
                    }
 
 
-prior :: PrimMonad m => X -> Prob m Tree
+prior :: X -> Prob IO Tree
 prior = prior' 0.95 0.05
 
-prior' :: PrimMonad m => Double -> Double -> X -> Prob m Tree
-prior' α β x = go 1 x
+prior' :: Double -> Double -> X -> Prob IO Tree
+prior' α β = go 1
     where
-        go :: Int -> X -> Prob m Tree
-        go depth x' = do
-            split <- P.bernoulli $ α * fromIntegral depth ** (negate β)
-            if split
-               then do
-                   t <- branch x'
-                   case t of
-                     Branch 
-                     Leaf x'' = Leaf x''
-               else return (Leaf x)
+        psplit :: Int -> Prob IO Bool
+        psplit depth = P.bernoulli $ α * fromIntegral depth ** (negate β)
 
-branch :: PrimMonad m => X -> Prob m Tree
-branch x = do
-    v <- P.discreteUniform [1 .. U.length (x V.! 1)]
-    let x_v = fmap (U.! v) x
-    c <- P.uniformR (V.minimum x_v, V.maximum x_v)
-    
+        prule :: X -> Prob IO (Int, Double)
+        prule x = do
+            let (Z :. _ :. nCol) = R.extent x
+            v <- P.discreteUniform [0..(nCol - 1)]
+            let x_v = R.slice x (Any :. v)
+                mx  = R.foldAllS max 0 x_v
+                mn  = R.foldAllS min 1 x_v
+            c <- P.uniformR (mx, mn)
+            return (v, c)
+
+        go :: Int -> X -> Prob IO Tree
+        go depth x = do
+            split <- psplit depth
+            if not split then return (Leaf x) else do
+                (v, c) <- prule x
+                case splitX v c x of
+                  Nothing             -> return (Leaf x)
+                  Just (below, above) ->
+                      Branch v c <$> go (depth+1) below <*> go (depth+1) above
+
+splitX :: Int -> Double -> X -> Maybe (X, X)
+splitX = undefined

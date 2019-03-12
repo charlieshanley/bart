@@ -1,4 +1,4 @@
-{ mkDerivation, base, mwc-probability, mwc-random, primitive
+{ mkDerivation, base, mwc-probability, mwc-random, primitive, repa
 , stdenv
 }:
 mkDerivation {
@@ -6,7 +6,7 @@ mkDerivation {
   version = "0.1.0.0";
   src = ./.;
   libraryHaskellDepends = [
-    base mwc-probability mwc-random primitive
+    base mwc-probability mwc-random primitive repa
   ];
   homepage = "https://github.com/charlieshanley/bart";
   description = "Bayesian additive regression trees";
